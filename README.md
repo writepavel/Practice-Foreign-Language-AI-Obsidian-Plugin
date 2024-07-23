@@ -1,0 +1,1 @@
+# Practice-Foreign-Language-AI-Obsidian-Plugin
