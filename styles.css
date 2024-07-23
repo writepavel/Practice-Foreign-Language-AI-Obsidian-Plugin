@@ -1,0 +1,58 @@
+/* Стили для кнопки "Speak" */
+.pfl-speak-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.pfl-speak-button:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+/* Стили для иконки внутри кнопки */
+.pfl-button-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+}
+
+/* Обеспечиваем правильное отображение SVG внутри кнопки */
+.pfl-button-icon svg {
+    width: 16px;
+    height: 16px;
+    color: currentColor;
+}
+
+/* Стили для clickable-icon */
+.clickable-icon {
+    cursor: pointer;
+    color: var(--text-normal);
+}
+
+.clickable-icon:hover {
+    color: var(--text-accent);
+}
+
+
+/* Новые стили для режима Source 
+.cm-preview-code-block .pfl-speak-button {
+    display: none;
+}
+
+.cm-line:not(.cm-active) .pfl-speak-button {
+    display: inline-flex;
+}
+
+.cm-line.cm-active .pfl-speak-button {
+    display: none;
+}
+    */
