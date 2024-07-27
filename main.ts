@@ -1,11 +1,18 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, setIcon, MarkdownPostProcessorContext, EditorPosition, TFile } from 'obsidian';
 import { EditorView, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import { formatCzechGrammarResult, CzechWordAnalysis } from './czechGrammarAnalyzer';
+import { formatCzechGrammarResult, CzechWordAnalysis } from './src/czechGrammarAnalyzer';
+import { checkAndSetupMetaBind } from './src/dependenciesSetup';
+import { updateExistingNote, createFrontmatter, createNoteContent } from './src/wordNote';
+import { addProcessFolderCommand } from './src/allTablesInFolder';
+import { setupVocabularyTableProcessor } from './src/vocabularyTrainerTable';
+import { formatForTag } from './src/utils';
+import { DEFAULT_SETTINGS, PracticeForeignLanguageSettings, IPracticeForeignLanguagePlugin } from './src/types';
+
 import axios from 'axios';
 import yaml from 'js-yaml';
 
-async function retryRequest(fn: () => Promise<any>, retries = 3, delay = 10000): Promise<any> {
+async function retryRequest(fn: () => Promise<any>, retries = 1, delay = 10000): Promise<any> {
     try {
         return await fn();
     } catch (error) {
@@ -15,39 +22,6 @@ async function retryRequest(fn: () => Promise<any>, retries = 3, delay = 10000):
         }
         throw error;
     }
-}
-
-interface PracticeForeignLanguageSettings {
-    openaiApiKey: string;
-    language: string;
-    voice: string;
-    speed: number;
-    buttonIcon: string;
-    buttonText: string;
-    wordColumn: string;
-    translationColumn: string;
-    phraseColumn: string;
-    phraseTranslationColumn: string;
-	wordNoteColumn: string;
-    newWordsFolder: string;
-	serverURLs: string[];
-}
-
-const DEFAULT_SETTINGS: PracticeForeignLanguageSettings = {
-    openaiApiKey: '',
-    language: 'cs-CZ',
-    voice: 'alloy',
-    speed: 0.75,
-    buttonIcon: 'volume-2',
-    buttonText: 'Speak',
-    wordColumn: 'Slovo',
-    translationColumn: 'Překlad',
-    phraseColumn: 'Výraz',
-    phraseTranslationColumn: 'Překlad Výrazu',
-	wordNoteColumn: 'Poznámka',
-    newWordsFolder: 'CzechGrammarWords',
-	serverURLs: [
-	]
 }
 
 class SpeakButtonWidget extends WidgetType {
@@ -74,7 +48,7 @@ class SpeakButtonWidget extends WidgetType {
     }
 }
 
-export default class PracticeForeignLanguagePlugin extends Plugin {
+export default class PracticeForeignLanguagePlugin extends Plugin implements IPracticeForeignLanguagePlugin {
     settings: PracticeForeignLanguageSettings;
 	private requestQueue: { word: string; resolve: (value: any) => void; reject: (reason?: any) => void; }[] = [];
     private isProcessingQueue = false;
@@ -88,17 +62,18 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
             new Notice('Practice Foreign Language plugin is active');
         });
 
-        this.addCommand({
+        /*this.addCommand({
             id: 'pfl-process-current-file',
             name: 'Process current file for TTS',
             editorCallback: (editor: Editor, view: MarkdownView) => {
                 this.processFileForTTS(editor);
             }
         });
+*/
 
-        this.addCommand({
-            id: 'analyze-czech-grammar-table',
-            name: 'Analyze Czech Grammar Table',
+		this.addCommand({
+            id: 'create-czech-word-cards',
+            name: 'Create Czech Word Cards From Table',
             callback: () => this.analyzeCzechGrammarTable()
         });
 
@@ -107,6 +82,14 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
             name: 'Analyze Czech Grammar for Current Page',
             callback: () => this.analyzeCurrentPageCzechGrammar()
         });
+
+		try {
+			await checkAndSetupMetaBind.call(this);
+		} catch (error) {
+			console.error('Error during MetaBind setup:', error);
+		}
+
+		addProcessFolderCommand(this);
 
         this.addSettingTab(new PracticeForeignLanguageSettingTab(this.app, this));
 
@@ -119,6 +102,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
         this.registerEditorExtension([this.editorExtension]);
 
         this.registerMarkdownPostProcessor(this.inlinePostProcessor.bind(this));
+		setupVocabularyTableProcessor(this);
     }
 
 	updateFrontmatter(existingFrontmatter: any, czechWordGrammar: CzechWordAnalysis) {
@@ -163,60 +147,48 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
         return `${this.settings.newWordsFolder}/${wordData.slovo}.md`;
     }
 
-	async processWordWithNewPath(wordData: any, tableHeader: string, sourcePath: string, tableHeaderColumns: string[]) {
-        const czechWordGrammar = await this.analyzeCzechWordGrammar(wordData.slovo);
-        if (czechWordGrammar) {
-            const frontmatter = this.createFrontmatter(wordData, czechWordGrammar, tableHeader);
-            const content = this.createNoteContent(wordData, czechWordGrammar, sourcePath, tableHeader);
-            
-            const filePath = this.determineFilePath(wordData, tableHeaderColumns);
-            await this.createOrUpdateWordNote(filePath, content);
-        } else {
-            new Notice(`Failed to analyze word: ${wordData.slovo}`);
-        }
+	public getSettings(): PracticeForeignLanguageSettings {
+        return this.settings;
     }
 
-	async createOrUpdateWordNote(filePath: string, content: string) {
+	async processWordFromTable(wordData: any, tableHeader: string, tableHeaderColumns: string[], withRemoteAnalyze: boolean) {
+		let czechWordGrammar: CzechWordAnalysis | null = null;
+	
+		if (withRemoteAnalyze) {
+			czechWordGrammar = await this.analyzeCzechWordGrammar(wordData.slovo);
+			if (!czechWordGrammar) {
+				new Notice(`Failed to analyze word: ${wordData.slovo}`);
+				return;
+			}
+		}
+	
+		const filePath = this.determineFilePath(wordData, tableHeaderColumns);
+		await this.createOrUpdateWordNote(filePath, wordData, czechWordGrammar, withRemoteAnalyze, tableHeader);
+	}
+	
+    async createOrUpdateWordNote(filePath: string, wordData: any, czechWordGrammar: CzechWordAnalysis | null, withRemoteAnalyze: boolean, tableHeader: string) {
         try {
             const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
             const dir = this.app.vault.getAbstractFileByPath(dirPath);
             if (!dir) {
                 await this.app.vault.createFolder(dirPath);
             }
-
+    
             const file = this.app.vault.getAbstractFileByPath(filePath);
             if (file instanceof TFile) {
-                await this.app.vault.modify(file, content);
+                const existingContent = await this.app.vault.read(file);
+                const frontmatter = createFrontmatter(wordData, czechWordGrammar, tableHeader);
+                const updatedContent = updateExistingNote(existingContent, frontmatter, czechWordGrammar, withRemoteAnalyze, this.settings.flashcardsNoteSection);
+                await this.app.vault.modify(file, updatedContent);
             } else {
+                const content = createNoteContent(wordData, czechWordGrammar, tableHeader, this.settings.flashcardsNoteSection);
                 await this.app.vault.create(filePath, content);
             }
-
-            new Notice(`Note for "${filePath}" has been created/updated.`);
+    
+            new Notice(`Note for "${filePath}" has been ${withRemoteAnalyze ? 'fully' : 'partially'} created/updated.`);
         } catch (error) {
             console.error(`Error creating/updating note for "${filePath}":`, error);
             new Notice(`Failed to create/update note for "${filePath}". Check the console for details.`);
-        }
-    }
-
-	updateNoteContent(content: string, frontmatter: any, czechWordGrammar: CzechWordAnalysis) {
-        const yamlFrontmatter = yaml.dump(frontmatter, {
-            lineWidth: -1,
-            quotingType: '"',
-            forceQuotes: true
-        });
-
-        const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
-        const updatedContent = content.replace(frontmatterRegex, `---\n${yamlFrontmatter}---`);
-
-        // Update the formatted grammar result in the content
-        const formattedResult = formatCzechGrammarResult(czechWordGrammar);
-        const grammarSectionRegex = /## Grammar\n[\s\S]*?(?=\n##|$)/;
-        const grammarSection = `## Grammar\n${formattedResult}`;
-
-        if (updatedContent.match(grammarSectionRegex)) {
-            return updatedContent.replace(grammarSectionRegex, grammarSection);
-        } else {
-            return updatedContent + '\n\n' + grammarSection;
         }
     }
 
@@ -429,79 +401,83 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
     async saveSettings() {
         await this.saveData(this.settings);
     }
-
-    async analyzeCzechGrammarTable() {
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile) {
-            new Notice('No active file');
-            return;
-        }
-
-        const content = await this.app.vault.read(activeFile);
-        const lines = content.split('\n');
-
-        let tableStart = -1;
-        let tableHeader = '';
+	async analyzeCzechGrammarTable() {
+		const withRemoteAnalyze = this.settings.useRemoteGrammarAnalysis;
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice('No active file');
+			return;
+		}
+	
+		const content = await this.app.vault.read(activeFile);
+		const lines = content.split('\n');
+	
+		let tableStart = -1;
+		let tableHeader = '';
 		let tableHeaderRow = '';
 		let tableHeaderColumns;
-
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].startsWith('## ') && lines[i + 2]?.includes(`${this.settings.wordColumn}`) && lines[i + 2]?.includes(`${this.settings.translationColumn}`)) {
-                tableHeader = lines[i];
-				tableHeaderRow = lines[i+2];
-				tableHeaderColumns = tableHeaderRow.split('|').map(col => col.trim()).filter(col => col);
-                tableStart = i + 1;
-                break;
-            }
-        }
-
-        if (tableStart === -1) {
-            new Notice('No suitable table found');
-            return;
-        } else {
+	
+		// Find the table start and header
+		for (let i = 0; i < lines.length; i++) {
+			if (lines[i].startsWith('## ') || lines[i].startsWith('### ')) {
+				tableHeader = lines[i];
+				// Look for the table header row within the next 5 lines
+				for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+					if (lines[j].includes(`${this.settings.wordColumn}`) && lines[j].includes(`${this.settings.translationColumn}`)) {
+						tableHeaderRow = lines[j];
+						tableHeaderColumns = tableHeaderRow.split('|').map(col => col.trim()).filter(col => col);
+						tableStart = j - 1;
+						break;
+					}
+				}
+				if (tableStart !== -1) break;
+			}
+		}
+	
+		if (tableStart === -1) {
+			new Notice('No suitable table found');
+			return;
+		} else {
 			console.log(`Table found at line ${tableStart}, reading words`);
 		}
-
-        const tableData = [];
-        for (let i = tableStart + 3; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (line.startsWith('|') && line.endsWith('|')) {
-                const columns = line.split('|').map(col => col.trim()).filter(col => col);
-                if (columns.length >= 2) {
-					//console.log(`reading line with word, columns: ${columns}`)
-                    const rowData = this.extractRowData(columns, tableHeaderColumns, tableHeader);
-                    if (rowData) {
-                        tableData.push(rowData);
-                    }
-                }
-            } else {
-                break; // End of table
-            }
-        }
-
+	
+		const tableData = [];
+		for (let i = tableStart + 3; i < lines.length; i++) {
+			const line = lines[i].trim();
+			if (line.startsWith('|') && line.endsWith('|')) {
+				const columns = line.split('|').map(col => col.trim()).filter(col => col);
+				if (columns.length >= 2) {
+					const rowData = this.extractRowData(columns, tableHeaderColumns, tableHeader);
+					if (rowData) {
+						tableData.push(rowData);
+					}
+				}
+			} else if (line.startsWith('## ') || line.startsWith('### ')) {
+				break; // End of table or start of a new section
+			}
+		}
+	
 		const totalWords = tableData.length;
-        let processedWords = 0;
-
-        for (const wordData of tableData) {
-            await this.processWordWithNewPath(wordData, tableHeader, activeFile.path, tableHeaderColumns);
-            processedWords++;
-            new Notice(`Processing words: ${processedWords}/${totalWords}`);
-        }
-
-        await this.processQueue(); // Ждем завершения обработки всей очереди
-
-        new Notice(`Processed ${processedWords} words`);
-    }
-
-
-    queueWordAnalysis(wordData: any, tableHeader: string, sourcePath: string): Promise<void> {
+		let processedWords = 0;
+	
+		for (const wordData of tableData) {
+			await this.processWordFromTable(wordData, tableHeader, tableHeaderColumns, withRemoteAnalyze);
+			processedWords++;
+			new Notice(`Processing words: ${processedWords}/${totalWords}`);
+		}
+	
+		await this.processQueue(); // Wait for the entire queue to complete processing
+	
+		new Notice(`Processed ${processedWords} words`);
+	}
+    queueWordAnalysis(wordData: any, tableHeader: string): Promise<void> {
         return new Promise((resolve, reject) => {
             this.requestQueue.push({
                 word: wordData.slovo,
                 resolve: async (czechWordGrammar) => {
                     if (czechWordGrammar) {
-                        const frontmatter = this.createFrontmatter(wordData, czechWordGrammar, tableHeader);
-                        const content = this.createNoteContent(wordData, czechWordGrammar, sourcePath, tableHeader);
+                        const frontmatter = createFrontmatter(wordData, czechWordGrammar, tableHeader);
+                        const content = createNoteContent(wordData, czechWordGrammar, tableHeader, this.settings.flashcardsNoteSection);
                         await this.createWordNote(wordData.slovo, frontmatter, content);
                     } else {
                         new Notice(`Failed to analyze word: ${wordData.slovo}`);
@@ -547,6 +523,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
             preklad: tableHeaderColumns.indexOf(this.settings.translationColumn),
             vyraz: tableHeaderColumns.indexOf(this.settings.phraseColumn),
             prekladVyrazu: tableHeaderColumns.indexOf(this.settings.phraseTranslationColumn),
+			partOfSpeech: tableHeaderColumns.indexOf(this.settings.partOfSpeechColumn),
 			wordNote: tableHeaderColumns.indexOf(this.settings.wordNoteColumn)
         };
 
@@ -559,63 +536,78 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
             preklad: columns[columnIndexes.preklad],
             vyraz: columnIndexes.vyraz !== -1 ? columns[columnIndexes.vyraz] : '',
             prekladVyrazu: columnIndexes.prekladVyrazu !== -1 ? columns[columnIndexes.prekladVyrazu] : '',
-            wordNote: columnIndexes.wordNote !== -1 ? columns[columnIndexes.wordNote] : '',
-			titleTag: this.convertToTag(title)
+			wordNote: columnIndexes.wordNote !== -1 ? columns[columnIndexes.wordNote] : '',
+            partOfSpeech: columnIndexes.partOfSpeech !== -1 ? columns[columnIndexes.partOfSpeech] : '',
+			titleTag: formatForTag(title)
         };
     }
 
-    convertToTag(title: string): string {
-		// Remove leading '#' symbols and trim whitespace
-		const trimmedTitle = title?.trim()?.replace(/^#+\s*/, '').trim();
-		// Replace punctuation with underscores, keep all letters (including non-Latin) and numbers
-		return trimmedTitle?.replace(/[^\p{L}\p{N}]+/gu, '_')?.toLowerCase()?.replace(/^_|_$/g, '');
-	}
-
-    async processWord(wordData: any, tableHeader: string, sourcePath: string) {
+    async processWord(wordData: any, tableHeader: string) {
         const czechWordGrammar = await this.analyzeCzechWordGrammar(wordData.slovo);
 		console.log("processWord, czechWordGrammar = ");
 		console.log(czechWordGrammar);
-        const frontmatter = this.createFrontmatter(wordData, czechWordGrammar, tableHeader);
-        const content = this.createNoteContent(wordData, czechWordGrammar, sourcePath, tableHeader);
+        const frontmatter = createFrontmatter(wordData, czechWordGrammar, tableHeader);
+        const content = createNoteContent(wordData, czechWordGrammar, tableHeader, this.settings.flashcardsNoteSection);
         
         await this.createWordNote(wordData.slovo, frontmatter, content);
     }
-
-    async analyzeCurrentPageCzechGrammar() {
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile) {
-            new Notice('No active file');
-            return;
-        }
-
-        const fileContent = await this.app.vault.read(activeFile);
-        const frontmatter = this.app.metadataCache.getFileCache(activeFile)?.frontmatter;
-
-        if (!frontmatter || !frontmatter.slovo) {
-            new Notice('No "slovo" property found in frontmatter');
-            return;
-        }
-
-        const word = frontmatter.slovo;
-        const czechWordGrammar = await this.analyzeCzechWordGrammar(word);
-
-        if (czechWordGrammar) {
-            const wordData = {
-                slovo: word,
-                preklad: frontmatter.translation || '',
-                vyraz: frontmatter.phrase || '',
-                prekladVyrazu: frontmatter.phrase_translation || '',
-                titleTag: this.convertToTag(frontmatter.theme || '')
-            };
-
-            const updatedContent = this.createNoteContent(wordData, czechWordGrammar, activeFile.path, frontmatter.theme || '');
-            
-            await this.app.vault.modify(activeFile, updatedContent);
-            new Notice(`Note for "${word}" has been updated.`);
-        } else {
-            new Notice(`Failed to analyze word: ${word}`);
-        }
-    }
+	
+	async analyzeCurrentPageCzechGrammar() {
+		const withRemoteAnalyze = this.settings.useRemoteGrammarAnalysis;
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice('No active file');
+			return;
+		}
+	
+		const frontmatter = this.app.metadataCache.getFileCache(activeFile)?.frontmatter;
+	
+		if (!frontmatter || !frontmatter.slovo) {
+			new Notice('No "slovo" property found in frontmatter');
+			return;
+		}
+	
+		const word = frontmatter.slovo;
+		const czechWordGrammar = withRemoteAnalyze ? await this.analyzeCzechWordGrammar(word) : null;
+	
+		const wordData = {
+			slovo: word,
+			translation: frontmatter.translation || '',
+			phrase: frontmatter.phrase || '',
+			phrase_translation: frontmatter.phrase_translation || '',
+			theme: frontmatter.theme || '',
+			partOfSpeech: frontmatter.partOfSpeech || ''
+		};
+	
+		// Create new frontmatter YAML string
+		const newFrontmatterYaml = yaml.dump(wordData, {
+			lineWidth: -1,
+			quotingType: '"',
+			forceQuotes: true,
+			noRefs: true,
+			noCompatMode: true
+		});
+	
+		try {
+			// Read the existing content of the file
+			const existingContent = await this.app.vault.read(activeFile);
+	
+			// Use updateExistingNote to update the content
+			const updatedContent = await updateExistingNote(existingContent, newFrontmatterYaml, czechWordGrammar, withRemoteAnalyze, this.settings.flashcardsNoteSection);
+	
+			// Modify the file with the updated content
+			await this.app.vault.modify(activeFile, updatedContent);
+	
+			new Notice(`Note for "${word}" has been updated.`);
+		} catch (error) {
+			console.error(`Error updating note for "${word}":`, error);
+			new Notice(`Failed to update note for "${word}". Check the console for details.`);
+		}
+	
+		if (withRemoteAnalyze && !czechWordGrammar) {
+			new Notice(`Failed to analyze word: ${word} but basic word data is updated.`);
+		}
+	}
 
 	async analyzeCzechWordGrammar(word: string): Promise<CzechWordAnalysis | null> {
 		const serverUrl = this.getNextServerURL();
@@ -664,111 +656,6 @@ export default class PracticeForeignLanguagePlugin extends Plugin {
             return null;
         }
     }
-
-	createFrontmatter(wordData: any, czechWordGrammar: any, tableHeader: string) {
-		let frontmatter: Record<string, any> = {
-			slovo: wordData.slovo,
-			translation: wordData.preklad,
-			theme: tableHeader.replace(/^#+\s*/, '').trim(),
-			phrase: wordData.vyraz,
-			phrase_translation: wordData.prekladVyrazu,
-			partOfSpeech: czechWordGrammar.partOfSpeechType,
-			partOfSpeechVerbose: czechWordGrammar.partOfSpeechFull
-		};
-	
-		if (czechWordGrammar.partOfSpeechType === 'Sloveso') {
-			frontmatter.verbConjugationGroup = czechWordGrammar.verbConjugationGroup;
-			frontmatter.vzor = czechWordGrammar.verbVzor;
-			frontmatter.isIrregularVerb = czechWordGrammar.isIrregularVerb;
-		} else if (czechWordGrammar.partOfSpeechType === 'Podstatné jméno') {
-			frontmatter.nounRod = czechWordGrammar.nounRod;
-			frontmatter.nounRodFull = czechWordGrammar.nounRodFull;
-			frontmatter.vzor = czechWordGrammar.nounVzor;
-		}
-	
-		// Convert the frontmatter object to YAML format
-		const yamlFrontmatter = yaml.dump(frontmatter, {
-			lineWidth: -1,  // Disable line wrapping
-			quotingType: '"',  // Use double quotes for strings
-			forceQuotes: true  // Force quoting of all strings
-		});
-	
-		// Return the YAML frontmatter wrapped in --- without extra quotes
-		return `---\n${yamlFrontmatter}---\n`;
-	}
-
-	formatPartOfSpeechAndPattern(czechWordGrammar: CzechWordAnalysis): string {
-		let result = czechWordGrammar.partOfSpeechFull;
-	
-		if (czechWordGrammar.nounVzor) {
-			result += `. Grammar pattern is: ${czechWordGrammar.nounVzor}`;
-		} else if (czechWordGrammar.verbVzor) {
-			result += `. Grammar pattern is: ${czechWordGrammar.verbVzor}`;
-		}
-		return result;
-	}
-
-    createNoteContent(wordData: any, czechWordGrammar: any, sourcePath: string, tableHeader: string) {
-        const wordTags = this.createTags(wordData, czechWordGrammar, 'czwords');
-        const phraseTags = this.createTags(wordData, czechWordGrammar, 'czphrase');
-    
-        const sourceFile = this.app.vault.getAbstractFileByPath(sourcePath);
-        let sourceLink = sourceFile instanceof TFile 
-            ? this.app.metadataCache.fileToLinktext(sourceFile, '') 
-            : sourcePath;
-    
-        const frontmatter = this.createFrontmatter(wordData, czechWordGrammar, tableHeader);
-		//console.log("createNoteContent czechWordGrammar = ", czechWordGrammar)
-    
-        // Create content with trimmed lines
-        const content = `${frontmatter}# ${wordData.slovo}
-    
-    Theme note: [[${tableHeader}]]
-	${this.formatPartOfSpeechAndPattern(czechWordGrammar)}
-    
-    ${wordTags.join(' ')}
-    ${wordData.slovo} !speak[${wordData.slovo}] ::: ${wordData.preklad}
-    
-    ${phraseTags.join(' ')}
-    ${wordData.vyraz} !speak[${wordData.vyraz}] ::: ${wordData.prekladVyrazu}
-    
-    ### Grammar
-
-    link to prirucka: https://prirucka.ujc.cas.cz/?slovo=${encodeURIComponent(wordData.slovo)}
-    link to slovnik: https://slovnik.seznam.cz/preklad/cesky_anglicky/${encodeURIComponent(wordData.slovo)}    
-    ${czechWordGrammar.formattedResult}
-    `;
-    
-        // Split the content into lines, trim each line, and join back
-        return content.split('\n').map(line => line.trim()).join('\n');
-    }
-
-	createTags(wordData: any, czechWordGrammar: any, type: 'czwords' | 'czphrase') {
-		const basePath = `#flashcards/${type}`;
-		const tags = czechWordGrammar?.partOfSpeechType ? [
-			`${basePath}/theme/${wordData.titleTag}`,
-			`${basePath}/${this.convertToTag(czechWordGrammar.partOfSpeechType).toLowerCase()}`
-		] : [
-			`${basePath}/theme/${wordData.titleTag}`
-		];
-	
-		if (czechWordGrammar.partOfSpeechType === 'Sloveso' || czechWordGrammar.partOfSpeechType === 'Podstatné jméno') {
-			const vzorType = czechWordGrammar.partOfSpeechType === 'Sloveso' ? 'sloveso_vzor' : 'podstatne_jmeno_vzor';
-			tags.push(`${basePath}/${vzorType}/${czechWordGrammar.verbVzor || czechWordGrammar.nounVzor}`);
-		}
-	
-		if (czechWordGrammar.partOfSpeechType === 'Sloveso') {
-			tags.push(`${basePath}/verbgroup/${czechWordGrammar.verbConjugationGroup}`);
-		}
-	
-		if (czechWordGrammar.partOfSpeechType === 'Podstatné jméno') {
-			tags.push(`${basePath}/nounrod/${czechWordGrammar.nounRod}`);
-		}
-	
-		tags.push(`${basePath}/all`);
-	
-		return tags;
-	}
 
     async createWordNote(word: string, frontmatter: any, content: string) {
 		const folderPath = this.settings.newWordsFolder;
@@ -903,60 +790,92 @@ class PracticeForeignLanguageSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
-            .setName('Translation Column')
-            .setDesc('Name of the column containing the translation')
-            .addText(text => text
-                .setPlaceholder('Překlad')
-                .setValue(this.plugin.settings.translationColumn)
-                .onChange(async (value) => {
-                    this.plugin.settings.translationColumn = value;
-                    await this.plugin.saveSettings();
-                }));
+		new Setting(containerEl)
+			.setName('Translation Column')
+			.setDesc('Name of the column containing the translation')
+			.addText(text => text
+				.setPlaceholder('Překlad')
+				.setValue(this.plugin.settings.translationColumn)
+				.onChange(async (value) => {
+					this.plugin.settings.translationColumn = value;
+					await this.plugin.saveSettings();
+				}));
 
-        new Setting(containerEl)
-            .setName('Phrase Column')
-            .setDesc('Name of the column containing the example phrase')
-            .addText(text => text
-                .setPlaceholder('Výraz')
-                .setValue(this.plugin.settings.phraseColumn)
-                .onChange(async (value) => {
-                    this.plugin.settings.phraseColumn = value;
-                    await this.plugin.saveSettings();
-                }));
+		new Setting(containerEl)
+			.setName('Phrase Column')
+			.setDesc('Name of the column containing the example phrase')
+			.addText(text => text
+				.setPlaceholder('Výraz')
+				.setValue(this.plugin.settings.phraseColumn)
+				.onChange(async (value) => {
+					this.plugin.settings.phraseColumn = value;
+					await this.plugin.saveSettings();
+				}));
 
-        new Setting(containerEl)
-            .setName('Phrase Translation Column')
-            .setDesc('Name of the column containing the phrase translation')
-            .addText(text => text
-                .setPlaceholder('Překlad Výrazu')
-                .setValue(this.plugin.settings.phraseTranslationColumn)
-                .onChange(async (value) => {
-                    this.plugin.settings.phraseTranslationColumn = value;
-                    await this.plugin.saveSettings();
-                }));
+		new Setting(containerEl)
+			.setName('Phrase Translation Column')
+			.setDesc('Name of the column containing the phrase translation')
+			.addText(text => text
+				.setPlaceholder('Překlad Výrazu')
+				.setValue(this.plugin.settings.phraseTranslationColumn)
+				.onChange(async (value) => {
+					this.plugin.settings.phraseTranslationColumn = value;
+					await this.plugin.saveSettings();
+				}));
 
-				new Setting(containerEl)
-				.setName('Word Note Column')
-				.setDesc('Name of the column containing the note link for each word')
-				.addText(text => text
-					.setPlaceholder('Poznámka')
-					.setValue(this.plugin.settings.wordNoteColumn)
-					.onChange(async (value) => {
-						this.plugin.settings.wordNoteColumn = value;
-						await this.plugin.saveSettings();
-					}));		
+		new Setting(containerEl)
+			.setName('Word Note Column')
+			.setDesc('Name of the column containing the note link for each word')
+			.addText(text => text
+				.setPlaceholder('Poznámka')
+				.setValue(this.plugin.settings.wordNoteColumn)
+				.onChange(async (value) => {
+					this.plugin.settings.wordNoteColumn = value;
+					await this.plugin.saveSettings();
+				}));
 
-        new Setting(containerEl)
-            .setName('New Words Folder')
-            .setDesc('Folder where new word notes will be created')
-            .addText(text => text
-                .setPlaceholder('CzechGrammarWords')
-                .setValue(this.plugin.settings.newWordsFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.newWordsFolder = value;
-                    await this.plugin.saveSettings();
-                }));
+		new Setting(containerEl)
+			.setName('Part Of Speech Column')
+			.setDesc('Name of the column containing part of speech')
+			.addText(text => text
+				.setPlaceholder('Slovní druh')
+				.setValue(this.plugin.settings.partOfSpeechColumn)
+				.onChange(async (value) => {
+					this.plugin.settings.partOfSpeechColumn = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('New Words Folder')
+			.setDesc('Folder where new word notes will be created')
+			.addText(text => text
+				.setPlaceholder('CzechGrammarWords')
+				.setValue(this.plugin.settings.newWordsFolder)
+				.onChange(async (value) => {
+					this.plugin.settings.newWordsFolder = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Flashcards Note Section')
+			.setDesc('Name of word section for flashcards')
+			.addText(text => text
+				.setPlaceholder('Flashcards')
+				.setValue(this.plugin.settings.flashcardsNoteSection)
+				.onChange(async (value) => {
+					this.plugin.settings.flashcardsNoteSection = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Remote Grammar Analysis')
+			.setDesc('Use Remote Grammar Analysis to get additional info about word - noun gender, grammar vzor etc. But it is still very unstable.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.useRemoteGrammarAnalysis)
+				.onChange(async (value) => {
+					this.plugin.settings.useRemoteGrammarAnalysis = value;
+					await this.plugin.saveSettings();
+				}));
 
 		new Setting(containerEl)
 			.setName('Server URLs')

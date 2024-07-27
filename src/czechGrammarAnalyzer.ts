@@ -15,7 +15,7 @@ export interface CzechWordAnalysis {
     isIrregularVerb?: boolean;
     osoba2jednCislo?: string;
     priruckaData?: any; 
-}
+} 
 
 export function formatCzechGrammarResult(data: CzechWordAnalysis): string {
     let result = `
