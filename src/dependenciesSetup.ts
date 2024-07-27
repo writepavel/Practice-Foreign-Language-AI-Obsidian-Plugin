@@ -77,6 +77,54 @@ export async function checkAndSetupMetaBind(this: Plugin): Promise<void> {
       {
         name: 'nounGenderSelect',
         declaration: "INPUT[inlineSelect(option(mužský_živ),option(mužský_neživ),option(ženský),option(střední),option(NOT_DEFINED))]"
+      },
+      {
+        name: 'grammarPatternsList',
+        declaration: "INPUT[listSuggester(option(Dělat),option(Mluvit),option(Studovat),option(Pán),option(Muž),option(Předseda),option(Soudce),option(Hrad),option(Stroj),option(Kamen),option(Les),option(Žena),option(Růže),option(Kost),option(Píseň),option(Město),option(Moře),option(Stavení),option(Kuře),option(NOT_DEFINED))]"
+      },
+      {
+        name: 'nounGendersList',
+        declaration: "INPUT[listSuggester(option(mužský_živ),option(mužský_neživ),option(ženský),option(střední),option(NOT_DEFINED))]"
+      },
+      {
+        name: 'partOfSpeechList',
+        declaration: "INPUT[listSuggester(option(Sloveso),option(Podstatné jméno),option(Přídavné jméno),option(Příslovce),option(Číslovka),option(Předložka),option(Zájmeno),option(Spojka),option(Částice),option(Citoslovce),option(NOT_DEFINED))]"
+      },
+      {
+        name: 'verbConjugationGroups',
+        declaration: "INPUT[listSuggester(option(1, 1 - Dělat),option(2, 2 - Mluvit),option(3, 3 - Studovat),option(NOT_DEFINED))]"
+      },
+      {
+        name: 'showIrregularVerbsMode',
+        declaration: "INPUT[suggester(option(any),option(irregular only),option(regular  only),defaultValue(any))]"
+      },
+      {
+        name: 'wordThemesList',
+        declaration: "INPUT[listSuggester(optionQuery('#wordlist-theme or \"a2_collections\" or \"a2_collections/processed word tables\"'))]"
+      },
+      {
+        name: 'numberFormSelector',
+        declaration: "INPUT[suggester(option(singular and plural),option(singular only),option(plural  only),defaultValue(singular and plural))]"
+      },
+      {
+        name: 'sklonovaniPadsSelector',
+        declaration: "INPUT[listSuggester(option(1. Nominativ [kdo / co?]),option(2. Genitiv [koho / čeho?]),option(3. Dativ [komu / čemu?]),option(4. Akuzativ [koho / co?]),option(5. Vokativ [voláme]),option(6. Local [o kom / o čem?]),option(7. Instrumental [kým / čím?]))]"
+      },
+      {
+        name: 'verbsPersonsSelector',
+        declaration: "INPUT[listSuggester(option(1. osoba [já]),option(2. osoba [ty / vy]),option(3. osoba [on / ona / ono / oni]))]"
+      },
+      {
+        name: 'verbsTensesSelector',
+        declaration: "INPUT[listSuggester(option(Past Tense),option(Present Tense),option(Future Tense))]"
+      },
+      {
+        name: 'knowledgeLevel',
+        declaration: "INPUT[slider(addLabels, minValue(1), maxValue(3),class(knowledge-level-slider))]"
+      },
+      {
+        name: 'knowledgeLevelsSuggester',
+        declaration: "INPUT[inlineListSuggester(option(1, 1 - Hard),option(2, 2 - Normal),option(3, 3 - Easy))]"
       }
     ];
 
