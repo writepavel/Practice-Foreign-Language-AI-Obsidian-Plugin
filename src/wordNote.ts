@@ -205,8 +205,8 @@ function createFlashcardDecks(wordData: any, czechWordGrammar: any, type: 'czwor
 
 function createFlashcardsSection(wordData: any, czechWordGrammar: any): string {
 
-    console.log("createFlashcardsSection wordData = ", wordData);
-    console.log("createFlashcardsSection czechWordGrammar = ", czechWordGrammar);
+    //console.log("createFlashcardsSection wordData = ", wordData);
+    //console.log("createFlashcardsSection czechWordGrammar = ", czechWordGrammar);
 
     const wordTags = createFlashcardDecks(wordData, czechWordGrammar, 'czwords');
     const phraseTags = createFlashcardDecks(wordData, czechWordGrammar, 'czphrase');
@@ -271,7 +271,7 @@ export function createNoteContent(
     tableHeader: string,
     flashcardsSection: string
 ): string {
-    console.log("createNoteContent tableHeader = ", tableHeader);
+    //console.log("createNoteContent tableHeader = ", tableHeader);
     return unifiedNoteContent(
         null, // No existing content for new notes
         wordData,

@@ -684,7 +684,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 
 	private getNextServerURL(): string {
         const url = this.settings.serverURLs[this.currentServerURLIndex];
-		console.log("using server url: " + url);
+		//console.log("using server url: " + url);
         this.currentServerURLIndex = (this.currentServerURLIndex + 1) % this.settings.serverURLs.length;
         return url;
     }

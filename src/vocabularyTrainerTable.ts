@@ -6,7 +6,6 @@ import { IPracticeForeignLanguagePlugin, PracticeForeignLanguageSettings } from 
 export function setupVocabularyTableProcessor(plugin: IPracticeForeignLanguagePlugin) {
     // Markdown post-processor
     plugin.registerMarkdownPostProcessor((element: HTMLElement, context: MarkdownPostProcessorContext) => {
-        console.log("Post-processor called with element:", element);
         
         const renderChild = new VocabularyTableRenderChild(element, plugin);
         context.addChild(renderChild);
@@ -15,15 +14,12 @@ export function setupVocabularyTableProcessor(plugin: IPracticeForeignLanguagePl
     // CodeMirror extension for Live Preview mode
     const vocabularyTableField = StateField.define<DecorationSet>({
         create() { 
-            console.log("vocabularyTableField create called");
             return Decoration.none;
         },
         update(oldState, transaction) {
-            console.log("vocabularyTableField update called");
             return oldState;
         },
         provide(field) {
-            console.log("vocabularyTableField provide called", field);
             return EditorView.decorations.from(field);
         }
     });
@@ -51,32 +47,28 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
     }
 
     onload() {
-        console.log("VocabularyTableRenderChild onload called");
         this.processElement(this.containerEl);
         this.observer.observe(this.containerEl, { childList: true, subtree: true });
     }
 
     onunload() {
-        console.log("VocabularyTableRenderChild onunload called");
         this.observer.disconnect();
     }
 
     private processElement(element: HTMLElement) {
-        console.log("Processing element:", element);
+        //("Processing element:", element);
         const sliders = element.querySelectorAll('.knowledge-level-slider');
         if (sliders.length > 0) {
-            console.log("Knowledge level sliders found:", sliders);
+            //console.log("Knowledge level sliders found:", sliders);
             sliders.forEach(slider => {
                 const table = this.findAncestorTable(slider);
                 if (table) {
-                    console.log("Vocabulary table found:", table);
                     this.applyVocabularyTableStyling(table);
                 } else {
-                    console.log("No ancestor table found for the knowledge level slider");
                 }
             });
         } else {
-            console.log("No knowledge level sliders found in this element");
+            //console.log("No knowledge level sliders found in this element");
         }
     }
 
@@ -92,7 +84,6 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
     }
 
     private applyVocabularyTableStyling(table: HTMLTableElement) {
-        console.log("Applying vocabulary table styling");
         table.classList.add('vocabulary-table');
         
         const rows = table.querySelectorAll('tbody tr');
@@ -106,7 +97,6 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                 const sliderCell = cells[sliderCellIndex];
                 
                 if (translationCell && wordCell && sliderCell) {
-                    console.log(`Processing row ${rowIndex}: word cell ${sliderCellIndex - 2}, translation cell ${sliderCellIndex - 1}, slider cell ${sliderCellIndex}`);
                     
                     translationCell.classList.add('vocabulary-translation');
                     translationCell.classList.add('hidden');
@@ -114,48 +104,40 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                     const slider = sliderCell.querySelector('.knowledge-level-slider') as HTMLInputElement;
                     
                     const showTranslation = () => {
-                        console.log(`Showing translation for row ${rowIndex}`);
                         translationCell.classList.remove('hidden');
                     };
     
                     const hideTranslation = () => {
-                        console.log(`Hiding translation for row ${rowIndex}`);
                         translationCell.classList.add('hidden');
                     };
     
                     let isMouseDown = false;
     
                     slider.addEventListener('mousedown', (e: Event) => {
-                        console.log(`Mousedown event on slider for row ${rowIndex}`);
                         isMouseDown = true;
                         showTranslation();
                     });
     
                     slider.addEventListener('touchstart', (e: Event) => {
-                        console.log(`Touchstart event on slider for row ${rowIndex}`);
                         showTranslation();
                     });
     
                     slider.addEventListener('input', (e: Event) => {
-                        console.log(`Input event on slider for row ${rowIndex}, value: ${slider.value}`);
                         if (!isMouseDown) {
                             hideTranslation();
                         }
                     });
     
                     slider.addEventListener('change', (e: Event) => {
-                        console.log(`Change event on slider for row ${rowIndex}, value: ${slider.value}`);
                         hideTranslation();
                     });
     
                     document.addEventListener('mouseup', () => {
-                        console.log(`Mouseup event for row ${rowIndex}`);
                         isMouseDown = false;
                         hideTranslation();
                     });
     
                     document.addEventListener('touchend', () => {
-                        console.log(`Touchend event for row ${rowIndex}`);
                         hideTranslation();
                     });
                 } else {
@@ -165,19 +147,6 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                 console.log(`No slider found in row ${rowIndex}`);
             }
         });
-    }
-
-    private createSlider(cell: HTMLTableCellElement, index: number): HTMLInputElement {
-        console.log("Creating slider for cell:", index);
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.min = '1';
-        slider.max = '3';
-        slider.value = '1';
-        slider.className = 'knowledge-level-slider';
-        slider.id = `slider-${index}`;
-        cell.appendChild(slider);
-        return slider;
     }
 }
 
