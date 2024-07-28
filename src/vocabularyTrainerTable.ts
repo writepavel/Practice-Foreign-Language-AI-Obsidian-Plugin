@@ -91,60 +91,66 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
             const cells = Array.from(row.querySelectorAll('td'));
             const sliderCellIndex = cells.findIndex(cell => cell.querySelector('.knowledge-level-slider'));
             
-            if (sliderCellIndex > 0) {  // Ensure there's a cell before the slider cell
+            if (sliderCellIndex > 0) {
                 const translationCell = cells[sliderCellIndex - 1];
-                const wordCell = cells[sliderCellIndex - 2];  // The cell before the translation
+                const wordCell = cells[sliderCellIndex - 2];
                 const sliderCell = cells[sliderCellIndex];
                 
                 if (translationCell && wordCell && sliderCell) {
                     
                     translationCell.classList.add('vocabulary-translation');
-                    translationCell.classList.add('hidden');
-                    
-                    const slider = sliderCell.querySelector('.knowledge-level-slider') as HTMLInputElement;
-                    
-                    const showTranslation = () => {
-                        translationCell.classList.remove('hidden');
-                    };
+                    translationCell.setAttribute('data-hidden', 'true');
     
-                    const hideTranslation = () => {
-                        translationCell.classList.add('hidden');
+                    const slider = sliderCell.querySelector('.knowledge-level-slider') as HTMLInputElement;
+    
+                    const toggleTranslation = (show: boolean) => {
+                        translationCell.setAttribute('data-hidden', show ? 'false' : 'true');
                     };
     
                     let isMouseDown = false;
+                    let isSliderActive = false;
     
-                    slider.addEventListener('mousedown', (e: Event) => {
+                    translationCell.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         isMouseDown = true;
-                        showTranslation();
+                        toggleTranslation(true);
                     });
     
-                    slider.addEventListener('touchstart', (e: Event) => {
-                        showTranslation();
+                    slider.addEventListener('mousedown', (e) => {
+                        isSliderActive = true;
+                        toggleTranslation(true);
                     });
     
-                    slider.addEventListener('input', (e: Event) => {
-                        if (!isMouseDown) {
-                            hideTranslation();
+                    slider.addEventListener('input', (e) => {
+                        if (isSliderActive) {
+                            e.stopPropagation();
+                            toggleTranslation(true);
                         }
                     });
     
-                    slider.addEventListener('change', (e: Event) => {
-                        hideTranslation();
+                    document.addEventListener('mouseup', (e) => {
+                        if (isMouseDown || isSliderActive) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            isMouseDown = false;
+                            isSliderActive = false;
+                            toggleTranslation(false);
+                        }
                     });
     
-                    document.addEventListener('mouseup', () => {
-                        isMouseDown = false;
-                        hideTranslation();
+                    translationCell.addEventListener('mouseover', () => {
+                        // console.log(`${new Date().toISOString().substr(11, 12)} Наведение на ячейку перевода в строке ${rowIndex}`);
                     });
     
-                    document.addEventListener('touchend', () => {
-                        hideTranslation();
+                    translationCell.addEventListener('mouseout', () => {
+                        // console.log(`${new Date().toISOString().substr(11, 12)} Уход с ячейки перевода в строке ${rowIndex}`);
                     });
                 } else {
-                    console.log(`Missing required cells in row ${rowIndex}`);
+                    console.log(`${new Date().toISOString().substr(11, 12)} Отсутствуют необходимые ячейки в строке ${rowIndex}`);
                 }
             } else {
-                console.log(`No slider found in row ${rowIndex}`);
+                console.log(`${new Date().toISOString().substr(11, 12)} Слайдер не найден в строке ${rowIndex}`);
             }
         });
     }

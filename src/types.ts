@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: PracticeForeignLanguageSettings = {
     voice: 'alloy',
     speed: 0.75,
     buttonIcon: 'volume-2',
-    buttonText: 'Speak',
+    buttonText: '',
     wordColumn: 'Slovo',
     translationColumn: 'Překlad',
     phraseColumn: 'Výraz',

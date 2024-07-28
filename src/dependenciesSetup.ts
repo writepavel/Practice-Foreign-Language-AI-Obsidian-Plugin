@@ -47,6 +47,108 @@ class MetaBindInstallPrompt extends Modal {
   }
 }
 
+class TemplaterInstallPrompt extends Modal {
+  constructor(app: any) {
+    super(app);
+  }
+
+  onOpen() {
+    const {contentEl} = this;
+    contentEl.createEl('h2', {text: 'Templater Plugin Required'});
+    contentEl.createEl('p', {text: 'This plugin requires the Templater plugin to function properly. Would you like to install it now?'});
+    
+    contentEl.createEl('p', {
+      text: 'After installing Templater, please disable and re-enable this plugin, or reload Obsidian to complete the setup.',
+      cls: 'mod-warning'
+    });
+    
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText('Install Templater')
+        .setCta()
+        .onClick(() => {
+          window.open('https://obsidian.md/plugins?id=templater-obsidian', '_blank');
+          this.close();
+        }))
+      .addButton(btn => btn
+        .setButtonText('Cancel')
+        .onClick(() => {
+          this.close();
+        }));
+  }
+
+  onClose() {
+    const {contentEl} = this;
+    contentEl.empty();
+  }
+}
+
+export async function checkAndSetupTemplater(this: Plugin): Promise<void> {
+  try {
+    const dataviewPlugin = this.app.plugins.plugins['templater-obsidian'] as Plugin | undefined;
+
+    if (!dataviewPlugin) {
+      new Notice('Templater plugin is required. Please install it to use this feature.', 10000);
+      new TemplaterInstallPrompt(this.app).open();
+      return;
+    }
+  } catch (error) {
+    console.error('Error in checkAndSetupTemplater:', error);
+    new Notice(`Error setting up Templater integration: ${error.message}`);
+  }
+}
+
+class DataviewInstallPrompt extends Modal {
+  constructor(app: any) {
+    super(app);
+  }
+
+  onOpen() {
+    const {contentEl} = this;
+    contentEl.createEl('h2', {text: 'Dataview Plugin Required'});
+    contentEl.createEl('p', {text: 'This plugin requires the Dataview plugin to function properly. Would you like to install it now?'});
+    
+    contentEl.createEl('p', {
+      text: 'After installing Dataview, please disable and re-enable this plugin, or reload Obsidian to complete the setup.',
+      cls: 'mod-warning'
+    });
+    
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText('Install Dataview')
+        .setCta()
+        .onClick(() => {
+          window.open('https://obsidian.md/plugins?id=dataview', '_blank');
+          this.close();
+        }))
+      .addButton(btn => btn
+        .setButtonText('Cancel')
+        .onClick(() => {
+          this.close();
+        }));
+  }
+
+  onClose() {
+    const {contentEl} = this;
+    contentEl.empty();
+  }
+}
+
+export async function checkAndSetupDataview(this: Plugin): Promise<void> {
+  try {
+    const dataviewPlugin = this.app.plugins.plugins['dataview'] as Plugin | undefined;
+
+    if (!dataviewPlugin) {
+      new Notice('Dataview plugin is required. Please install it to use this feature.', 10000);
+      new DataviewInstallPrompt(this.app).open();
+      return;
+    }
+  } catch (error) {
+    console.error('Error in checkAndSetupDataView:', error);
+    new Notice(`Error setting up DataView integration: ${error.message}`);
+  }
+}
+
 export async function checkAndSetupMetaBind(this: Plugin): Promise<void> {
   try {
     const metaBindPlugin = this.app.plugins.plugins['obsidian-meta-bind-plugin'] as MetaBindPlugin | undefined;

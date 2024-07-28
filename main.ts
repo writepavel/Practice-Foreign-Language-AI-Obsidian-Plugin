@@ -2,7 +2,7 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 import { EditorView, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import { formatCzechGrammarResult, CzechWordAnalysis } from './src/czechGrammarAnalyzer';
-import { checkAndSetupMetaBind } from './src/dependenciesSetup';
+import { checkAndSetupMetaBind, checkAndSetupDataview, checkAndSetupTemplater } from './src/dependenciesSetup';
 import { updateExistingNote, createFrontmatter, createNoteContent } from './src/wordNote';
 import { addProcessFolderCommand } from './src/allTablesInFolder';
 import { setupVocabularyTableProcessor } from './src/vocabularyTrainerTable';
@@ -87,6 +87,18 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 			await checkAndSetupMetaBind.call(this);
 		} catch (error) {
 			console.error('Error during MetaBind setup:', error);
+		}
+
+		try {
+			await checkAndSetupTemplater.call(this);
+		} catch (error) {
+			console.error('Error during Templater setup:', error);
+		}
+
+        try {
+			await checkAndSetupDataview.call(this);
+		} catch (error) {
+			console.error('Error during Dataview setup:', error);
 		}
 
 		addProcessFolderCommand(this);
