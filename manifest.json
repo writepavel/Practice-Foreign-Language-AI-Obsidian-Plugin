@@ -1,7 +1,7 @@
 {
-	"id": "practice-foreign-language",
+	"id": "practice-foreign-language-plugin",
 	"name": "Practice Foreign Language Plugin",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"minAppVersion": "0.15.0",
 	"description": "Helps to train foreign words and grammar with AI help.",
 	"author": "Pavel Ponomarev",

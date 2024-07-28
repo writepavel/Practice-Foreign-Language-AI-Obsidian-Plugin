@@ -56,19 +56,14 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
     }
 
     private processElement(element: HTMLElement) {
-        //("Processing element:", element);
         const sliders = element.querySelectorAll('.knowledge-level-slider');
         if (sliders.length > 0) {
-            //console.log("Knowledge level sliders found:", sliders);
             sliders.forEach(slider => {
                 const table = this.findAncestorTable(slider);
                 if (table) {
                     this.applyVocabularyTableStyling(table);
-                } else {
                 }
             });
-        } else {
-            //console.log("No knowledge level sliders found in this element");
         }
     }
 
@@ -110,6 +105,7 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                     let isMouseDown = false;
                     let isSliderActive = false;
     
+                    // Mouse events
                     translationCell.addEventListener('mousedown', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -139,6 +135,36 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                         }
                     });
     
+                    // Touch events
+                    translationCell.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        isMouseDown = true;
+                        toggleTranslation(true);
+                    });
+
+                    slider.addEventListener('touchstart', (e) => {
+                        isSliderActive = true;
+                        toggleTranslation(true);
+                    });
+
+                    slider.addEventListener('touchmove', (e) => {
+                        if (isSliderActive) {
+                            e.stopPropagation();
+                            toggleTranslation(true);
+                        }
+                    });
+
+                    document.addEventListener('touchend', (e) => {
+                        if (isMouseDown || isSliderActive) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            isMouseDown = false;
+                            isSliderActive = false;
+                            toggleTranslation(false);
+                        }
+                    });
+
                     translationCell.addEventListener('mouseover', () => {
                         // console.log(`${new Date().toISOString().substr(11, 12)} Наведение на ячейку перевода в строке ${rowIndex}`);
                     });
@@ -236,4 +262,3 @@ const vocabularyTablePlugin = ViewPlugin.fromClass(
         decorations: v => v.decorations
     }
 );
-

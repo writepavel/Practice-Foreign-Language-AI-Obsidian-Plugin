@@ -413,6 +413,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
     async saveSettings() {
         await this.saveData(this.settings);
     }
+    
 	async analyzeCzechGrammarTable() {
 		const withRemoteAnalyze = this.settings.useRemoteGrammarAnalysis;
 		const activeFile = this.app.workspace.getActiveFile();
