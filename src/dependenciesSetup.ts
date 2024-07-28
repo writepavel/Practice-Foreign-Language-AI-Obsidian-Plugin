@@ -222,7 +222,7 @@ export async function checkAndSetupMetaBind(this: Plugin): Promise<void> {
       },
       {
         name: 'knowledgeLevel',
-        declaration: "INPUT[slider(addLabels, minValue(1), maxValue(3),class(knowledge-level-slider))]"
+        declaration: "INPUT[inlineSelect(option(1, 1 - Hard),option(2, 2 - Normal),option(3, 3 - Easy),class(knowledge-level-slider))]"
       },
       {
         name: 'knowledgeLevelsSuggester',

@@ -113,7 +113,7 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                         toggleTranslation(true);
                     });
     
-                    slider.addEventListener('mousedown', (e) => {
+                    /*slider.addEventListener('mousedown', (e) => {
                         isSliderActive = true;
                         toggleTranslation(true);
                     });
@@ -123,7 +123,7 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                             e.stopPropagation();
                             toggleTranslation(true);
                         }
-                    });
+                    });*/
     
                     document.addEventListener('mouseup', (e) => {
                         if (isMouseDown || isSliderActive) {
@@ -143,7 +143,7 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                         toggleTranslation(true);
                     });
 
-                    slider.addEventListener('touchstart', (e) => {
+                    /*slider.addEventListener('touchstart', (e) => {
                         isSliderActive = true;
                         toggleTranslation(true);
                     });
@@ -153,7 +153,7 @@ class VocabularyTableRenderChild extends MarkdownRenderChild {
                             e.stopPropagation();
                             toggleTranslation(true);
                         }
-                    });
+                    });*/
 
                     document.addEventListener('touchend', (e) => {
                         if (isMouseDown || isSliderActive) {
