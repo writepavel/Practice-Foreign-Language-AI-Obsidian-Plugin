@@ -38,22 +38,29 @@ tags: pattern_grammar_collection
 
 # Grammar Pattern Collection
 
-## Czech ➡️ Russian
-
-\`\`\`dataview
-table without id "[[" + file.name + "|" + czech + "]]" as Phrase, russian as Translation, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈
-FROM #grammar_pattern AND [[]]
-WHERE contains(file.outlinks, this.file.link)
-\`\`\`
-
 ## Russian ➡️ Czech
 
 \`\`\`dataview
-table without id "[[" + file.name + "|" + russian + "]]" as Translation, czech as Phrase, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈
+table without id "[[" + file.name + "|" + russian + "]]" as Translation, czech as Phrase, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈,
+ join(map(filter(list(0,1,2,3,4), (k) => k < length(nouns)), (k) => nouns[string(k)].case)) AS "Noun Cases",
+  join(map(filter(list(0,1,2,3,4), (k) => k < length(nouns)), (k) => nouns[string(k)].baseForm)) AS "Nouns",
+  join(map(filter(list(0,1,2,3,4), (k) => k < length(verbs)), (k) => verbs[string(k)].conjugation)) AS "Verb Conjugations",
+    join(map(filter(list(0,1,2,3,4), (k) => k < length(verbs)), (k) => verbs[string(k)].infinitive)) AS "Verbs"
 FROM #grammar_pattern AND [[]]
 WHERE contains(file.outlinks, this.file.link)
 \`\`\`
 
+## Czech ➡️ Russian
+
+\`\`\`dataview
+table without id "[[" + file.name + "|" + czech + "]]" as Phrase, russian as Translation, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈,
+ join(map(filter(list(0,1,2,3,4), (k) => k < length(nouns)), (k) => nouns[string(k)].case)) AS "Noun Cases",
+  join(map(filter(list(0,1,2,3,4), (k) => k < length(nouns)), (k) => nouns[string(k)].baseForm)) AS "Nouns",
+  join(map(filter(list(0,1,2,3,4), (k) => k < length(verbs)), (k) => verbs[string(k)].conjugation)) AS "Verb Conjugations",
+    join(map(filter(list(0,1,2,3,4), (k) => k < length(verbs)), (k) => verbs[string(k)].infinitive)) AS "Verbs"
+FROM #grammar_pattern AND [[]]
+WHERE contains(file.outlinks, this.file.link)
+\`\`\`
     `;
 
     const collectionFile = await plugin.app.vault.create(
@@ -144,7 +151,7 @@ async function askAItoGeneratePatternsJson(plugin: IPracticeForeignLanguagePlugi
         }
     
         const prompt = createPrompt(generatorContext);
-        let response = await callOpenAI(prompt, openAI);
+        let response = await callOpenAI(prompt, openAI, "gpt-4o");
     
         if (response) {
           console.log("Initial OpenAI API Response:", response);
@@ -183,14 +190,15 @@ function createPrompt(context: any): string {
     const patternSklonovaniPads = patternsGrammarRequirements.patternSklonovaniPads || [];
     const patternVerbPersons = patternsGrammarRequirements.patternVerbPersons || [];
     const patternVerbTenses = patternsGrammarRequirements.patternVerbTenses || [];
+    const additionalAIPromptForPatterns = patternsGrammarRequirements.additionalAIPromptForPatterns || "";
   
     return JSON.stringify({
-        model: "gpt-4",
+        model: "gpt-4o",
         //model: "gpt-3.5-turbo-16k",
         messages: [
           {
             role: "system",
-            content: "You are a helpful assistant that generates Czech language grammar patterns for language learning. Always return your response as a valid JSON array, strictly adhering to the specified grammar requirements. The Czech and Russian fields are absolutely mandatory and must be provided for every pattern. Ensure all quotes within string values are properly escaped with a backslash (\\)."
+            content: "You are a professional creative teacher of czech language with 10 year experience that generates Czech language grammar patterns for language learning but that are common used and can be often heared in czech environment. Always return your response as a valid JSON array, strictly adhering to the specified grammar requirements. The Czech and Russian fields are absolutely mandatory and must be provided for every pattern. Ensure all quotes within string values are properly escaped with a backslash (\\)."
           },
           {
             role: "user",
@@ -208,6 +216,7 @@ function createPrompt(context: any): string {
             - Only use the following verb tenses as specified in patternVerbTenses:
               ${patternVerbTenses.join(', ') || 'No specific verb tenses provided, use common tenses'}
           Additional requirements:
+          - ${additionalAIPromptForPatterns}
           - Use words from the provided wordlist when possible.
           - Follow parameters from wordlistParameters.
           - Use common words suitable for A2 level Czech.
@@ -359,7 +368,7 @@ function createPrompt(context: any): string {
         ]
     });
 
-    const response = await callOpenAI(checkPrompt, openAI, "gpt-4");
+    const response = await callOpenAI(checkPrompt, openAI, "gpt-4o");
     return response;
 }
 
