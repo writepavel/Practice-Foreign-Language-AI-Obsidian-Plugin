@@ -1,5 +1,6 @@
 import { TFolder, TFile, Notice, normalizePath, FuzzySuggestModal } from 'obsidian';
 import { IPracticeForeignLanguagePlugin, PracticeForeignLanguageSettings } from './types';
+import { processWordFromTable } from './utils';
 
 export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
     constructor(private plugin: IPracticeForeignLanguagePlugin) {
@@ -76,7 +77,7 @@ export async function processFolderFiles(plugin: IPracticeForeignLanguagePlugin,
                 }
 
                 for (const wordData of tableData) {
-                    await plugin.processWordFromTable(wordData, tableHeader, tableHeaderColumns, settings.useRemoteGrammarAnalysis);
+                    await processWordFromTable(plugin, wordData, tableHeader, tableHeaderColumns, settings.useRemoteGrammarAnalysis);
                 }
 
                 // Move the processed file

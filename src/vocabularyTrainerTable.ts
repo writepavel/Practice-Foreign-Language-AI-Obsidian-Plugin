@@ -245,9 +245,14 @@ const vocabularyTablePlugin = ViewPlugin.fromClass(
                             }
                         }
                         if (tableLines.length > 1) {
-                            builder.add(line.from, view.state.doc.line(endLine - 1).to, Decoration.replace({
-                                widget: new VocabularyTableWidget(tableLines, this.plugin),
-                            }));
+                            // Создаем виджет для каждой строки таблицы
+                            tableLines.forEach((tableLine, index) => {
+                                let linePos = view.state.doc.line(line.number + index).from;
+                                builder.add(linePos, linePos, Decoration.widget({
+                                    widget: new VocabularyTableRowWidget([tableLine], line.number + index === endLine - 1, index === 0),
+                                    side: 1
+                                }));
+                            });
                         }
                         pos = view.state.doc.line(endLine).from;
                     } else {
@@ -262,3 +267,30 @@ const vocabularyTablePlugin = ViewPlugin.fromClass(
         decorations: v => v.decorations
     }
 );
+
+class VocabularyTableRowWidget extends WidgetType {
+    constructor(private tableLines: string[], private isLastRow: boolean, private isFirstRow: boolean) {
+        super();
+    }
+
+    toDOM() {
+        const row = document.createElement('tr');
+        const cells = this.tableLines[0].split('|').filter(cell => cell.trim() !== '');
+        cells.forEach((cell, cellIndex) => {
+            const cellElement = this.isFirstRow ? document.createElement('th') : document.createElement('td');
+            cellElement.innerHTML = cell.trim();
+            row.appendChild(cellElement);
+        });
+
+        if (this.isLastRow) {
+            const table = document.createElement('table');
+            table.className = 'vocabulary-table';
+            const tbody = document.createElement('tbody');
+            tbody.appendChild(row);
+            table.appendChild(tbody);
+            return table;
+        }
+
+        return row;
+    }
+}

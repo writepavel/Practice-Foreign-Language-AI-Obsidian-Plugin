@@ -1,4 +1,5 @@
 import { App, Plugin } from 'obsidian';
+import { CzechWordAnalysis } from './czechGrammarAnalyzer';
 
 export interface PracticeForeignLanguageSettings {
     openaiApiKey: string;
@@ -42,12 +43,14 @@ export const DEFAULT_SETTINGS: PracticeForeignLanguageSettings = {
 }
 
 export interface IPracticeForeignLanguagePlugin {
+    createOrUpdateWordNote(filePath: unknown, wordData: any, czechWordGrammar: CzechWordAnalysis | null, withRemoteAnalyze: boolean, tableHeader: string): unknown;
+    determineFilePath(wordData: any, tableHeaderColumns: string[]): unknown;
+    analyzeCzechWordGrammar(slovo: any): CzechWordAnalysis | PromiseLike<CzechWordAnalysis | null> | null;
     registerEditorExtension(arg0: unknown): unknown;
     registerMarkdownPostProcessor(arg0: (element: HTMLElement, context: import("obsidian").MarkdownPostProcessorContext) => void): unknown;
     app: App;
     settings: PracticeForeignLanguageSettings;
     getSettings(): PracticeForeignLanguageSettings;
-    processWordFromTable(wordData: any, tableHeader: string, tableHeaderColumns: string[], withRemoteAnalyze: boolean): Promise<void>;
     extractRowData(columns: string[], tableHeaderColumns: string[], title: string): any;
     addCommand(command: { id: string; name: string; callback: () => void }): void;
 }

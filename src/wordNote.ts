@@ -1,6 +1,7 @@
 import * as yaml from 'js-yaml';
 import { CzechWordAnalysis, formatCzechGrammarResult } from './czechGrammarAnalyzer';
-import { formatForTag } from './utils';
+import { formatForTag, getGeneratorPromptContext, processWordFromTable } from './utils';
+import { Notice } from 'obsidian';
 
 function parseExistingFrontmatter(frontmatterContent: string): Record<string, any> {
     const lines = frontmatterContent.split('\n');
@@ -325,4 +326,35 @@ export function updateExistingNote(
         newFrontmatter.theme,
         flashcardsSection
     );
+}
+
+export async function analyzeCzechGrammarForAllWords(plugin: IPracticeForeignLanguagePlugin) {
+    const context = await getGeneratorPromptContext(plugin);
+    if (!context) {
+        new Notice("Failed to get context");
+        return;
+    }
+
+    const wordlist = context.wordlist;
+    const totalWords = Object.values(wordlist).flat().length;
+    let processedWords = 0;
+
+    for (const [partOfSpeech, words] of Object.entries(wordlist)) {
+        for (const word of words) {
+            const wordData = {
+                slovo: word.word,
+                preklad: word.translation,
+                vyraz: word.phrase || '',
+                prekladVyrazu: word.phrase_translation || '',
+                partOfSpeech: partOfSpeech,
+                titleTag: context.wordlistParameters.themeList[0] || ''
+            };
+
+            await processWordFromTable(plugin, wordData, wordData.titleTag, [], true);
+            processedWords++;
+            new Notice(`Processing words: ${processedWords}/${totalWords}`);
+        }
+    }
+
+    new Notice(`Processed ${processedWords} words`);
 }

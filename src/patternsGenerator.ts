@@ -1,7 +1,8 @@
-import { TFolder, TFile, Notice, Vault, normalizePath, FuzzySuggestModal, moment } from 'obsidian';
+import { TFolder, TFile, MarkdownView, Notice, Vault, normalizePath, FuzzySuggestModal, moment } from 'obsidian';
 import { IPracticeForeignLanguagePlugin, PracticeForeignLanguageSettings } from './types';
 import { getAPI, DataviewApi } from "obsidian-dataview";
 import { OpenAI } from 'openai';
+import { executeDataviewQuery, extractDataviewQueries, getGeneratorPromptContext } from './utils';
 
 export function addGeneratePatternsCommand(plugin: IPracticeForeignLanguagePlugin) {
     plugin.addCommand({
@@ -40,7 +41,7 @@ tags: pattern_grammar_collection
 ## Czech ➡️ Russian
 
 \`\`\`dataview
-table without id czech, russian, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈,  "[[" + file.name + "|" + link + "]]" as Link
+table without id "[[" + file.name + "|" + czech + "]]" as Phrase, russian as Translation, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈
 FROM #grammar_pattern AND [[]]
 WHERE contains(file.outlinks, this.file.link)
 \`\`\`
@@ -48,17 +49,11 @@ WHERE contains(file.outlinks, this.file.link)
 ## Russian ➡️ Czech
 
 \`\`\`dataview
-table without id russian, czech, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈,  "[[" + file.name + "|" + link + "]]" as Link
+table without id "[[" + file.name + "|" + russian + "]]" as Translation, czech as Phrase, "\`INPUT[knowledgeLevel][:" + file.name + "#toTranslationKnowledgeLevel]\`" as "Hard ➡️ Easy", "!speak[" + czech + "]" as 🔈
 FROM #grammar_pattern AND [[]]
 WHERE contains(file.outlinks, this.file.link)
 \`\`\`
 
-#### pattern files
-\`\`\`dataview
-LIST
-FROM #grammar_pattern AND [[]]
-WHERE contains(file.outlinks, this.file.link)
-\`\`\`
     `;
 
     const collectionFile = await plugin.app.vault.create(
@@ -110,6 +105,10 @@ ${objectToYaml(pattern.grammar.otherWords, '  ')}
 ${pattern.czech} - ${pattern.russian}
 
 #grammar_pattern
+
+\`\`\`yaml
+${objectToYaml(pattern.grammar, '  ')}
+\`\`\`
 
 from pattern collection [[${collectionFileName}]]`;
 
@@ -363,124 +362,86 @@ function createPrompt(context: any): string {
     const response = await callOpenAI(checkPrompt, openAI, "gpt-4");
     return response;
 }
-  
-async function getGeneratorPromptContext(plugin: IPracticeForeignLanguagePlugin): Promise<any> {
-    const dvapi = getAPI();
-    if (!dvapi) {
-        new Notice("Dataview plugin is not available");
-        return;
-    }
 
-    const activeFile = plugin.app.workspace.getActiveFile();
-    if (!activeFile) {
-        new Notice("No active file");
-        return;
-    }
+export function shouldFillFrontmatterWithWordList(content: string, frontmatter: any): boolean {
+    // Check for Dataview query
+    const hasDataviewQuery = /```dataview\s[\s\S]*?```/.test(content);
 
-    // Get frontmatter of the current file
-    const currentFrontmatter = dvapi.page(activeFile.path)?.file?.frontmatter;
-    console.log("Frontmatter of the current file:", currentFrontmatter);
+    // Check for specific frontmatter properties
+    const hasFrontmatterProperties = frontmatter && 
+        (Array.isArray(frontmatter.vzorList) ||
+         Array.isArray(frontmatter.partsOfSpeechList) ||
+         Array.isArray(frontmatter.themeList) ||
+         typeof frontmatter.patternSklonovaniPads !== 'undefined');
 
-    // Extract dataview queries from the file content
-    const fileContent = await plugin.app.vault.read(activeFile);
-    const queries = extractDataviewQueries(fileContent);
+    // Check for specific meta-bind inputs
+    const hasMetaBindInputs = 
+        content.includes('INPUT[wordThemesList][:themeList]') ||
+        content.includes('INPUT[partOfSpeechList][:partsOfSpeechList]') ||
+        content.includes('INPUT[grammarPatternsList][:vzorList]');
 
-    if (queries.length === 0) {
-        new Notice("No dataview queries found in the file");
-        return;
-    }
+    return hasDataviewQuery && (hasFrontmatterProperties || hasMetaBindInputs);
+} 
 
-    // Use the first query as is
-    const firstQuery = queries[0];
-
-    const queryResult = await executeDataviewQuery(dvapi, firstQuery, activeFile.path);
-
-    // Process the results to get frontmatter for each file
-    const frontmatters = await Promise.all(queryResult.slice(0, 50).map(async (row) => {
-        const fileLink = row[0]; // Assuming the first column is the file link
-        const filePath = fileLink.replace(/\[\[(.*?)\|.*?\]\]/, "$1") + ".md";
-        const page = dvapi.page(filePath)?.file;
-        //console.log("next page is ", page);
-        return {
-            file: filePath,
-            word: page.frontmatter.slovo,
-            translation: page.translation,
-            ...page.frontmatter
-        };
-    }));
-
-    const groupedByPartOfSpeech = frontmatters.reduce((acc, curr) => {
-        const partOfSpeech = curr.partOfSpeech || 'Undefined';
-        if (!acc[partOfSpeech]) {
-            acc[partOfSpeech] = [];
+export async function fillFrontmatterWithWordList(file: TFile, content: string, frontmatter: any, plugin: IPracticeForeignLanguagePlugin) {
+    try {
+        if (!shouldFillFrontmatterWithWordList(content, frontmatter)) {
+            // console.log(`Skipping file ${file.path}: not a candidate for processing`);
+            return;
         }
-        acc[partOfSpeech].push(curr);
-        return acc;
-    }, {} as Record<string, typeof frontmatters>);
 
-    // Sort the groups alphabetically
-    const sortedGroups = Object.fromEntries(
-        Object.entries(groupedByPartOfSpeech).sort(([a], [b]) => a.localeCompare(b))
-    );
+        const dvapi = getAPI();
+        if (!dvapi) {
+            console.error('Dataview API not available');
+            return;
+        }
 
-    console.log("Words grouped by part of speech:", sortedGroups);
+        const queries = extractDataviewQueries(content);
+        if (queries.length === 0) {
+            console.error(`No dataview queries found in the file ${file.path}`);
+            return;
+        }
 
+        const firstQuery = queries[0];
+        const queryResult = await executeDataviewQuery(dvapi, firstQuery, file.path);
 
-    Object.entries(sortedGroups).forEach(([partOfSpeech, words]) => {
-        console.log(`${partOfSpeech}: ${words.length} words`);
+        const words = await Promise.all(queryResult.slice(0, 20).map(async (row: any) => {
+            if (typeof row[0] !== 'string') {
+                console.warn(`Unexpected row format in ${file.path}: ${JSON.stringify(row)}`);
+                return null;
+            }
+            const fileLink = row[0];
+            const filePath = fileLink.replace(/\[\[(.*?)\|.*?\]\]/, "$1") + ".md";
+            const page = dvapi.page(filePath);
+            return page?.slovo || null;
+        }));
+
+        const filteredWords = words.filter((word): word is string => word !== null);
+
+        await updateFrontmatter(file, filteredWords, frontmatter, plugin);
+    } catch (error) {
+        console.error(`Error in fillFrontmatterWithWordList for ${file.path}:`, error);
+        new Notice(`Error updating frontmatter in ${file.path}. Check the console for details.`);
+    }
+}
+
+async function updateFrontmatter(file: TFile, words: string[], frontmatter: any, plugin: IPracticeForeignLanguagePlugin) {
+    await plugin.app.fileManager.processFrontMatter(file, (fm) => {
+        fm.words = words;
+
+        // Check for patternSklonovaniPads and update if necessary
+        if (Array.isArray(fm.patternSklonovaniPads) && 
+            fm.patternSklonovaniPads.includes("4. Akuzativ [koho / co?]") &&
+            !fm.patternSklonovaniPads.includes("4. Accusative [koho / co?]")) {
+            fm.patternSklonovaniPads.push("4. Accusative [koho / co?]");
+        }
     });
 
-    console.log("Frontmatters of found files (limited to 20):", frontmatters);
-
-    // Create the result object
-    const result = {
-        wordlist: groupedByPartOfSpeech,
-        wordlistParameters: {
-            partsOfSpeechList: currentFrontmatter.partsOfSpeechList || [],
-            themeList: currentFrontmatter.themeList || [],
-            nounGenderList: currentFrontmatter.nounGenderList || [],
-            verbConjugationGroups: currentFrontmatter.verbConjugationGroups || []
-        },
-        patternsGrammarRequirements: {
-            patternSklonovaniPads: currentFrontmatter.patternSklonovaniPads || [],
-            patternVerbPersons: currentFrontmatter.patternVerbPersons || [],
-            patternVerbTenses: currentFrontmatter.patternVerbTenses || [],
-            additionalAIPromptForPatterns: currentFrontmatter.additionalAIPromptForPatterns || ''
-        }
-    };
-
-    return result;
-
-}
-
-async function executeDataviewQuery(dvapi: DataviewApi, query: string, sourcePath: string): Promise<any[]> {
-
-    const levelConditionRegex = /and choice\(\(none\(this\.(to|translationTo|toPhrase|phraseTranslationToPhrase)(?:Translation)?ShowLevels\) or \( none\((?:\1(?:Translation)?)?KnowledgeLevel\) and contains\(this\.\1(?:Translation)?ShowLevels, 1\)\)\), true, any\(this\.\1(?:Translation)?ShowLevels, \(level\) => \1(?:Translation)?KnowledgeLevel = level\)\)/g;
-    const modifiedQuery = query.replace(levelConditionRegex, '');
-
-    try {
-        const result = await dvapi.query(modifiedQuery, sourcePath);
-        if (result.successful) {
-            return result.value.values;
-        } else {
-            console.error("Query execution failed:", result.error);
-            return [];
-        }
-    } catch (error) {
-        console.error("Error executing query:", error);
-        return [];
+    // Update the display in the editor
+    const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+    if (view) {
+        view.requestSave();
     }
 }
 
-function extractDataviewQueries(content: string): string[] {
-    const regex = /```dataview\n([\s\S]*?)\n```/g;
-    const queries: string[] = [];
-    let match;
-
-    while ((match = regex.exec(content)) !== null) {
-        queries.push(match[1].trim());
-    }
-
-    return queries;
-}
-
+export { generateGrammarPatterns };

@@ -3,11 +3,11 @@ import { EditorView, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import { formatCzechGrammarResult, CzechWordAnalysis } from './src/czechGrammarAnalyzer';
 import { checkAndSetupMetaBind, checkAndSetupDataview, checkAndSetupTemplater } from './src/dependenciesSetup';
-import { updateExistingNote, createFrontmatter, createNoteContent } from './src/wordNote';
+import { updateExistingNote, createFrontmatter, createNoteContent, analyzeCzechGrammarForAllWords } from './src/wordNote';
 import { addProcessFolderCommand } from './src/allTablesInFolder';
 import { setupVocabularyTableProcessor } from './src/vocabularyTrainerTable';
-import { addGeneratePatternsCommand } from './src/patternsGenerator';
-import { formatForTag } from './src/utils';
+import { addGeneratePatternsCommand, shouldFillFrontmatterWithWordList, fillFrontmatterWithWordList, generateGrammarPatterns } from './src/patternsGenerator';
+import { formatForTag, processWordFromTable } from './src/utils';
 import { DEFAULT_SETTINGS, PracticeForeignLanguageSettings, IPracticeForeignLanguagePlugin } from './src/types';
 
 import axios from 'axios';
@@ -50,6 +50,7 @@ class SpeakButtonWidget extends WidgetType {
 }
 
 export default class PracticeForeignLanguagePlugin extends Plugin implements IPracticeForeignLanguagePlugin {
+
     settings: PracticeForeignLanguageSettings;
 	private requestQueue: { word: string; resolve: (value: any) => void; reject: (reason?: any) => void; }[] = [];
     private isProcessingQueue = false;
@@ -59,8 +60,8 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
     async onload() {
         await this.loadSettings();
 
-        this.addRibbonIcon('volume-2', 'Practice Foreign Language', () => {
-            new Notice('Practice Foreign Language plugin is active');
+        this.addRibbonIcon('land-plot', 'Generate patterns with AI', () => {
+            generateGrammarPatterns(this);
         });
 
         /*this.addCommand({
@@ -84,6 +85,12 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
             callback: () => this.analyzeCurrentPageCzechGrammar()
         });
 
+        this.addCommand({
+            id: 'analyze-check-grammar-for-all-words',
+            name: 'Analyze Check Grammar for All Words from Current File Query',
+            callback: () => analyzeCzechGrammarForAllWords(this)
+        });
+
 		try {
 			await checkAndSetupMetaBind.call(this);
 		} catch (error) {
@@ -105,6 +112,10 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 		addProcessFolderCommand(this);
         addGeneratePatternsCommand(this);
 
+        this.registerEvent(
+            this.app.workspace.on('file-open', (file) => this.onFileOpen(file))
+        );
+
         this.addSettingTab(new PracticeForeignLanguageSettingTab(this.app, this));
 
         this.registerMarkdownCodeBlockProcessor('ai-say-text', (source, el, ctx) => {
@@ -117,6 +128,17 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 
         this.registerMarkdownPostProcessor(this.inlinePostProcessor.bind(this));
 		setupVocabularyTableProcessor(this);
+    }
+
+    async onFileOpen(file: TFile | null) {
+        if (file && file.extension === 'md') {
+            const content = await this.app.vault.read(file);
+            const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+
+            if (shouldFillFrontmatterWithWordList(content, frontmatter)) {
+                await fillFrontmatterWithWordList(file, content, frontmatter, this);
+            }
+        }
     }
 
 	updateFrontmatter(existingFrontmatter: any, czechWordGrammar: CzechWordAnalysis) {
@@ -165,6 +187,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
         return this.settings;
     }
 
+    /*
 	async processWordFromTable(wordData: any, tableHeader: string, tableHeaderColumns: string[], withRemoteAnalyze: boolean) {
 		let czechWordGrammar: CzechWordAnalysis | null = null;
 	
@@ -179,6 +202,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 		const filePath = this.determineFilePath(wordData, tableHeaderColumns);
 		await this.createOrUpdateWordNote(filePath, wordData, czechWordGrammar, withRemoteAnalyze, tableHeader);
 	}
+        */
 	
     async createOrUpdateWordNote(filePath: string, wordData: any, czechWordGrammar: CzechWordAnalysis | null, withRemoteAnalyze: boolean, tableHeader: string) {
         try {
@@ -476,7 +500,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 		let processedWords = 0;
 	
 		for (const wordData of tableData) {
-			await this.processWordFromTable(wordData, tableHeader, tableHeaderColumns, withRemoteAnalyze);
+			await processWordFromTable(this, wordData, tableHeader, tableHeaderColumns, withRemoteAnalyze);
 			processedWords++;
 			new Notice(`Processing words: ${processedWords}/${totalWords}`);
 		}
@@ -485,6 +509,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 	
 		new Notice(`Processed ${processedWords} words`);
 	}
+
     queueWordAnalysis(wordData: any, tableHeader: string): Promise<void> {
         return new Promise((resolve, reject) => {
             this.requestQueue.push({
