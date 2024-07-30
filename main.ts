@@ -6,6 +6,7 @@ import { checkAndSetupMetaBind, checkAndSetupDataview, checkAndSetupTemplater } 
 import { updateExistingNote, createFrontmatter, createNoteContent } from './src/wordNote';
 import { addProcessFolderCommand } from './src/allTablesInFolder';
 import { setupVocabularyTableProcessor } from './src/vocabularyTrainerTable';
+import { addGeneratePatternsCommand } from './src/patternsGenerator';
 import { formatForTag } from './src/utils';
 import { DEFAULT_SETTINGS, PracticeForeignLanguageSettings, IPracticeForeignLanguagePlugin } from './src/types';
 
@@ -102,6 +103,7 @@ export default class PracticeForeignLanguagePlugin extends Plugin implements IPr
 		}
 
 		addProcessFolderCommand(this);
+        addGeneratePatternsCommand(this);
 
         this.addSettingTab(new PracticeForeignLanguageSettingTab(this.app, this));
 
