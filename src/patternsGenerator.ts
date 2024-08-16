@@ -283,7 +283,7 @@ async function askAItoGeneratePatternsJson(plugin: IPracticeForeignLanguagePlugi
       timer = setInterval(() => {
         const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
         notice?.setMessage(`Processing query... (${elapsedSeconds}s)`);
-      }, 1000);
+      }, 1000); 
   
       const response = await openai.chat.completions.create({
         model: model,
